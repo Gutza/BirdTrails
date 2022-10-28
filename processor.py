@@ -15,7 +15,9 @@ hi_val = 50
 dark_im: np.array = None
 idx = 0
 first = True
-for filename in tqdm(os.listdir(in_folder), desc="Processing images", total=im_count):
+prev_im: np.array = None
+
+for filename in tqdm(os.listdir(in_folder), desc="Processing images", total=im_count, disable=False):
     filepath = os.path.join(in_folder, filename)
     im = cv.cvtColor(cv.imread(filepath), cv.COLOR_BGR2GRAY)
     
@@ -25,17 +27,20 @@ for filename in tqdm(os.listdir(in_folder), desc="Processing images", total=im_c
 
     if first:
         dark_im = im
+        prev_im = im
         first = False
         continue
 
     dark_im = np.minimum(im, dark_im)
+    diff = np.sum(prev_im - dark_im)
 
-    if np.array_equal(im, dark_im):
+    if diff < 25:
         continue
 
+    prev_im = dark_im
     idx += 1
 
-    image_path_out = os.path.join(out_folder, f"{filename}-{idx}.jpg")
+    image_path_out = os.path.join(out_folder, f"trails-{idx:05d}.jpg")
     cv.imwrite(image_path_out, dark_im)
 
     if idx % 10:
