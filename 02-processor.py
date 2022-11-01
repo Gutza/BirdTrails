@@ -1,11 +1,10 @@
-from genericpath import isfile
+from threading import Lock
+from concurrent.futures import ThreadPoolExecutor
 import math
-from typing import List
 import numpy as np
 import cv2 as cv
 import os
 from tqdm import tqdm
-from threading import Thread, Lock
 import time
 from wakepy import set_keepawake, unset_keepawake
 
@@ -40,14 +39,17 @@ for i in range(latency + duration):
 def get_output_filepath(idx: int) -> str:
     return os.path.join(output_folder, f"trails-{idx:05d}.png")
 
-print("Searching for the first image to generate... ", end="", flush=True)
 first_output: int = 0
-for i in range(len(image_list)):
-    if os.path.isfile(get_output_filepath(i)):
-        first_output = i+1
-        continue
-    break
-print(f"done: the first unfinished image is {get_output_filepath(first_output)}")
+if not os.path.isfile(get_output_filepath(0)):
+    print("Starting from the beginning.")
+else:
+    print("Searching for the first image to generate... ", end="", flush=True)
+    for i in range(len(image_list)):
+        if os.path.isfile(get_output_filepath(i)):
+            first_output = i+1
+            continue
+        break
+    print(f"done: the first unfinished image is {get_output_filepath(first_output)}")
 
 log_mutex = Lock()
 
@@ -98,32 +100,7 @@ def process_history_layer(lIdx: int, factor: float):
     if np.min(old_im) == 255:
         valid_layers[lIdx] = False
 
-threads: List[Thread] = []
-def herd_thread(new_thread: Thread):
-    """Thread herder. Caps the number of active threads.
-
-    Args:
-        new_thread (Thread): The new thread to queue when it's go time.
-    """
-    global threads
-    go_time = len(threads) < max_thread_count
-    while not go_time:
-        live_threads = []
-        for t in threads:
-            if t.is_alive():
-                live_threads.append(t)
-            else:
-                t.join()
-                go_time = True
-        threads = live_threads
-
-        if not go_time:
-            time.sleep(0.001) # Wait a millisecond there, mister!
-
-    new_thread.start()
-    threads.append(new_thread)
-
-print(f"Create file «{pause_file}» at any time to pause processing.")
+print(f"Create file «{pause_file}» at any time to pause processing, or CTRL+C to stop (resume by starting the script again).")
 set_keepawake(keep_screen_awake=False)
 with tqdm(enumerate(image_list), total=len(image_list), desc="Processing images", disable=False) as tq:
     for idx, filename in tq:
@@ -140,15 +117,16 @@ with tqdm(enumerate(image_list), total=len(image_list), desc="Processing images"
 
         minI = max(0, idx - latency - duration + 1)
         maxI = max(0, idx - latency)
+
+        thread_pool = ThreadPoolExecutor(max_thread_count)
+
         for i in range(minI, maxI):
             lIdx = shIdx(i)
             if not valid_layers[lIdx]:
                 continue
-            herd_thread(Thread(target = process_history_layer, args = [lIdx, -(idx - latency - i)/10.]))
+            thread_pool.submit(process_history_layer, lIdx, -(idx - latency - i)/10.)
 
-        for t in threads:
-            t.join()
-        threads = []
+        thread_pool.shutdown()
 
         if idx < first_output:
             continue
