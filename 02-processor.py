@@ -33,8 +33,21 @@ os.makedirs(output_folder, exist_ok=True)
 
 image_list = os.listdir(preprocessed_folder)
 image_list.sort()
+
 for i in range(latency + duration):
     image_list.append(None)
+
+def get_output_filepath(idx: int) -> str:
+    return os.path.join(output_folder, f"trails-{idx:05d}.png")
+
+print("Searching for the first image to generate... ", end="", flush=True)
+first_output: int = 0
+for i in range(len(image_list)):
+    if os.path.isfile(get_output_filepath(i)):
+        first_output = i+1
+        continue
+    break
+print(f"done: the first unfinished image is {get_output_filepath(first_output)}")
 
 log_mutex = Lock()
 
@@ -114,6 +127,9 @@ print(f"Create file «{pause_file}» at any time to pause processing.")
 set_keepawake(keep_screen_awake=False)
 with tqdm(enumerate(image_list), total=len(image_list), desc="Processing images", disable=False) as tq:
     for idx, filename in tq:
+        if idx < first_output - latency - duration:
+            continue
+
         hIdx = shIdx(idx)
         if filename is None:
             history_layers[hIdx, :, :] = 255 + np.zeros((history_layers.shape[1], history_layers.shape[2]))
@@ -134,12 +150,15 @@ with tqdm(enumerate(image_list), total=len(image_list), desc="Processing images"
             t.join()
         threads = []
 
+        if idx < first_output:
+            continue
+
         if len(valid_layers[valid_layers]):
             final_im = np.min(history_layers[valid_layers, :, :], 0)
         else:
             final_im = history_layers[0, :, :] # If all layers are white, just return the first one
 
-        cv.imwrite(os.path.join(output_folder, f"trails-{idx:05d}.png"), final_im)
+        cv.imwrite(get_output_filepath(idx), final_im)
 
         if os.path.isfile(pause_file):
             tq.write(f"Paused; remove file «{pause_file}» to resume.")
