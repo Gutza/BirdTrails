@@ -109,7 +109,7 @@ with tqdm(enumerate(image_list), total=len(image_list), desc="Processing images"
 
         hIdx = shIdx(idx)
         if filename is None:
-            history_layers[hIdx, :, :] = 255 + np.zeros((history_layers.shape[1], history_layers.shape[2]))
+            history_layers[hIdx, :, :] = 255
             valid_layers[hIdx] = False
         else:
             history_layers[hIdx, :, :] = cv.imread(os.path.join(preprocessed_folder, filename))[:, :, 0]
